@@ -1,0 +1,21 @@
+debug :
+  trace : on
+  registers : ["pc"]
+  debug_enable : false
+  max_trace : 32
+  status_debug : off
+  status_always : false
+  kernel_debug : { irq-timeout-msec : 0, event_handler_debug : 0, core_debug : 0, risc1_write_regs_debug : 0,
+        risc1_map_from_users_debug : 0, syscall_debug : 0, exception_debug : 0, event_vcpu_handler_debug : 0,
+	irq_debug : 0, job_debug : 0 }
+  show_regs : false
+  catch_mode : 0x00bb0003
+  map_out : 0
+  syscall_out : 0
+  #pcstop : 0xc001bf5c
+memory : 
+  region : { addr : 0x18000000 , size : 0x8000 } # 0xb8000000 for stack
+  # region : { addr : 0xc0023000 , size : 0x03000000 } # for heap/stack
+  # region : { addr : 0xc0020000 , size : 0x03000000 } # for heap/stack
+  
+
