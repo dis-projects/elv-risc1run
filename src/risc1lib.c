@@ -42,7 +42,7 @@ Node *risc1_conf = NULL;
 static char gargs[0x1000];
 static char *garg = gargs;
 
-static void risc1ProcessSyscall(int job_instance_fd)
+static int risc1ProcessSyscall(int job_instance_fd)
 {
     struct stat ret_stat;
     struct stat_compat *stat_compat;
@@ -61,7 +61,7 @@ static void risc1ProcessSyscall(int job_instance_fd)
 
     if (ret != sizeof(struct risc1_message)) {
         perror("Read job file failed");
-        exit(1);
+        return -1;
     }
 
     if (risc1_syscall_out) {
@@ -193,6 +193,8 @@ static void risc1ProcessSyscall(int job_instance_fd)
         *risc1_env_size = full_needed_size;
         ret = 0;
         break;
+    case SC_EXIT:
+        return 1;
     case EVENT_VCPU_PUTCHAR:
         c = message.arg0;
         putchar(c);
@@ -204,15 +206,17 @@ static void risc1ProcessSyscall(int job_instance_fd)
         break;
     default:
         fprintf(stderr, "incorrect syscall number %d\n", message.num);
-        exit(1);
+        return -1;
     }
     message.retval = (ret < 0) ? -errno : ret;
     message.type = RISC1_MESSAGE_SYSCALL_REPLY;
     ret = write(job_instance_fd, &message, sizeof(struct risc1_message));
     if (ret < 0) {
         perror("syscall reply problem");
-        exit(1);
+        return -1;
     }
+
+    return 0;
 }
 
 static void processArg(struct risc1_job_instance *job_instance, const char *arg)
@@ -296,7 +300,7 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
     ret = ioctl(id, RISC1_IOC_ENQUEUE_JOB, &job_instance);
     if (ret != 0) {
         perror("enqueue job failed");
-        exit(1);
+        return -1;
     }
 
     status.job_instance_fd = job_instance.job_instance_fd;
@@ -322,17 +326,17 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
             if (ret == 0) {
                 if (time(NULL) - t >= risc1_timeout) {
                     fprintf(stderr, "Timeout !!!\n");
-                    exit(1);
+                    return -1;
                 }
                 continue;
             }
             if (ret < 0) {
                 perror("poll error/timout\n");
-                exit(1);
+                return -1;
             }
             if ((fds[0].revents | fds[1].revents) & (POLLERR | POLLNVAL)) {
                 fprintf(stderr, "poll returned error\n");
-                exit(1);
+                return -1;
             }
             break;
         }
@@ -340,7 +344,7 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
         ret = ioctl(id, RISC1_IOC_GET_JOB_STATUS, &status);
         if (ret != 0) {
             perror("status query failed\n");
-            exit(1);
+            return -1;
         }
 
         if (risc1_status_debug
@@ -356,7 +360,9 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
             case RISC1_JOB_STATUS_SYSCALL:
                 if (risc1_syscall_out)
                     fprintf(stderr, "risc1run syscall\n");
-                risc1ProcessSyscall(job_instance.job_instance_fd);
+                ret = risc1ProcessSyscall(job_instance.job_instance_fd);
+                if (ret)
+                    return ret;
                 break;
             case -1:    /* can be in initial state */
                 break;
@@ -375,7 +381,7 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
 
                 if (ioctl(job_instance.debug_fd, RISC1_IOC_DBG_GET_STOP_REASON, &sreason) < 0) {
                     perror("RISC1_IOC_DBG_GET_STOP_REASON");
-                    exit(1);
+                    return -1;
                 }
 
                 if (sreason.reason != prev_reason /*RISC1_STOP_REASON_DBG_INTERRUPT*/) {
@@ -390,7 +396,7 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
                     ret = ioctl(job_instance.debug_fd, RISC1_IOC_DUMP, RISC1_DUMP_VMMU);
                     if (ret) {
                         perror("map dump");
-                        exit(1);
+                        return -1;
                     }
                     risc1_map_out = 0;
                 }
@@ -404,7 +410,7 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
                         ret = ioctl(job_instance.debug_fd, RISC1_IOC_DBG_REGISTER_READ, &mem);
                         if (ret) {
                             perror("registers read");
-                            exit(1);
+                            return -1;
                         }
                         fprintf(stderr, "%s 0x%08x\n", pRisc1Trace[i].name, pcbuf);
                     }
@@ -443,17 +449,19 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
     return 0;
 }
 
-static void createMapper(int id, struct risc1_buf *rbuf)
+static int createMapper(int id, struct risc1_buf *rbuf)
 {
     if (ioctl(id, RISC1_IOC_CREATE_BUFFER, rbuf)) {
         perror("Can't create section buffer");
-        exit(1);
+        return -1;
     }
     if (ioctl(id, RISC1_IOC_CREATE_MAPPER, rbuf)) {
         perror("Can't create section mapper");
-        exit(1);
+        return -1;
     }
     close(rbuf->dmabuf_fd);
+
+    return 0;
 }
 
 int risc1AddSecton(pRisc1Job pRJob, void *amem, uint32_t addr, uint32_t size)
@@ -470,7 +478,8 @@ int risc1AddSecton(pRisc1Job pRJob, void *amem, uint32_t addr, uint32_t size)
     rbuf.type = RISC1_CACHED_BUFFER_FROM_UPTR;
     rbuf.p = (__u64)mem;
     rbuf.size = size;
-    createMapper(pRJob->id, &rbuf);
+    if (createMapper(pRJob->id, &rbuf))
+        return -1;
 
     esect->mapper_fd = rbuf.mapper_fd;
     esect->type = RISC1_ELF_SECTION_DATA;
@@ -482,6 +491,18 @@ int risc1AddSecton(pRisc1Job pRJob, void *amem, uint32_t addr, uint32_t size)
     return 0;
 }
 
+static pRisc1Job freeJob(pRisc1Job pRJob, int nsect)
+{
+    int i;
+
+    for (i = 0; i < nsect; i++) {
+        close(pRJob->segments[i].id);
+        free(pRJob->segments[i].mem);
+    }
+    free(pRJob);
+    return NULL;
+}
+
 int risc1PrepareJob(pRisc1Job pRJob)
 {
     struct risc1_buf rbuf;
@@ -490,18 +511,25 @@ int risc1PrepareJob(pRisc1Job pRJob)
     /* Create stack buffer */
     if (posix_memalign(&mem, 0x1000, RISC1_STACK_SIZE)) {
         perror("Can't allocate memory for stack");
+        freeJob(pRJob, pRJob->job.num_elf_sections);
         return -1;
     }
     rbuf.type = RISC1_CACHED_BUFFER_FROM_UPTR;
     rbuf.p = (__u64)mem;
     rbuf.size = RISC1_STACK_SIZE;
-    createMapper(pRJob->id, &rbuf);
+    if (createMapper(pRJob->id, &rbuf)) {
+        freeJob(pRJob, pRJob->job.num_elf_sections);
+        free(mem);
+        return -1;
+    }
 
     pRJob->job.stack_fd = rbuf.mapper_fd;
-    //pRJob->job.num_elf_sections++;
 
     if (ioctl(pRJob->id, RISC1_IOC_CREATE_JOB, &pRJob->job)) {
         perror("Can't create job");
+        close(rbuf.mapper_fd);
+        freeJob(pRJob, pRJob->job.num_elf_sections);
+        free(mem);
         return -1;
     }
 
@@ -511,7 +539,7 @@ int risc1PrepareJob(pRisc1Job pRJob)
     return 0;
 }
 
-static void readSection(int fid, void *mem, int offset, int size)
+static int readSegment(int fid, void *mem, int offset, int size)
 {
     int pos, ret;
 
@@ -521,7 +549,7 @@ static void readSection(int fid, void *mem, int offset, int size)
 
     if (pos < 0) {
         fprintf(stderr, "Can't read section data\n");
-        exit(1);
+        return -1;
     }
 
     ret = lseek(fid, offset, SEEK_SET);
@@ -530,7 +558,7 @@ static void readSection(int fid, void *mem, int offset, int size)
 
     if (ret != offset) {
         fprintf(stderr, "Can't seek section data read\n");
-        exit(1);
+        return -1;
     }
 
     ret = read(fid, mem, size);
@@ -539,7 +567,7 @@ static void readSection(int fid, void *mem, int offset, int size)
 
     if (ret != size) {
         fprintf(stderr, "Can't read section data\n");
-        exit(1);
+        return -1;
     }
 
     ret = lseek(fid, pos, SEEK_SET);
@@ -548,8 +576,10 @@ static void readSection(int fid, void *mem, int offset, int size)
 
     if (ret != pos) {
         fprintf(stderr, "Can't return after section data read\n");
-        exit(1);
+        return -1;
     }
+
+    return 0;
 }
 
 pRisc1Job risc1NewJob(int id, const char *fname)
@@ -561,7 +591,7 @@ pRisc1Job risc1NewJob(int id, const char *fname)
     Elf32_Phdr phdr;
     void *mem;
     pRisc1Job pRJob;
-    int fid;
+    int fid = -1;
     int size;
     int ret;
     int nsect = 0;
@@ -600,6 +630,11 @@ pRisc1Job risc1NewJob(int id, const char *fname)
         goto error;
     }
 
+    if (ehdr.e_phnum > RISC1_MAX_SEGMENTS) {
+        fprintf(stderr, "Too many segments %d\n", ehdr.e_phnum);
+        goto error;
+    }
+
     /* Read all pheaders */
     for (int i = 0; i < ehdr.e_phnum; i++) {
         enum risc1_job_elf_section_type type;
@@ -630,7 +665,11 @@ pRisc1Job risc1NewJob(int id, const char *fname)
         }
 
         /* Read segment */
-        readSection(fid, mem, phdr.p_offset, phdr.p_filesz);
+        if (readSegment(fid, mem, phdr.p_offset, phdr.p_filesz)) {
+            free(mem);
+            close(fid);
+            return freeJob(pRJob, nsect);
+        }
 
         if (phdr.p_filesz != phdr.p_memsz) {
             memset((char*)mem + phdr.p_filesz, 0, phdr.p_memsz - phdr.p_filesz);
@@ -639,8 +678,11 @@ pRisc1Job risc1NewJob(int id, const char *fname)
         rbuf.type = RISC1_CACHED_BUFFER_FROM_UPTR;
         rbuf.p = (__u64)mem;
         rbuf.size = phdr.p_memsz;
-        createMapper(id, &rbuf);
-
+        if (createMapper(id, &rbuf)) {
+            free(mem);
+            close(fid);
+            return freeJob(pRJob, nsect);
+        }
         job->elf_sections[nsect].mapper_fd = rbuf.mapper_fd;
         job->elf_sections[nsect].type = type;
         job->elf_sections[nsect].size = phdr.p_memsz;
@@ -650,9 +692,11 @@ pRisc1Job risc1NewJob(int id, const char *fname)
 
     job->num_elf_sections = nsect;
     job->hugepages = 1;
+    close(fid);
     return pRJob;
 error:
     free(pRJob);
+    close(fid);
     return NULL;
 }
 

@@ -6,9 +6,15 @@ typedef struct Risc1RegTrace {
     int code;
 } Risc1RegTrace, *pRisc1RegTrace;
 
+#define RISC1_MAX_SEGMENTS        16
+
 typedef struct Risc1Job {
     int id;
 #ifdef RISC1_LIB
+	struct {
+		void *mem;
+		int id;
+	} segments[RISC1_MAX_SEGMENTS];
     struct risc1_job job;
 #endif
 } Risc1Job, *pRisc1Job;

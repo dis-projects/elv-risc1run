@@ -9,13 +9,15 @@ static int pos = 0;
 
 #define MAX_NODES_IN_STACK	1024
 
-void NodeStackAllocate()
+int NodeStackAllocate()
 {
     elements = calloc(MAX_NODES_IN_STACK, sizeof(NodeElement));
     if (elements == NULL) {
-	perror("NodeStackAllocate");
-	exit(1);
+	    perror("NodeStackAllocate");
+	    return -1;
     }
+
+    return 0;
 }
 
 int NodePos()
@@ -25,6 +27,9 @@ int NodePos()
 
 NodeElement *NodeNew()
 {
+    if (pos >= MAX_NODES_IN_STACK)
+        return NULL;
+
     return &elements[pos++];
 }
 
@@ -33,7 +38,7 @@ NodeElement *NodeAddr(int n)
     return &elements[n];
 }
 
-void NodeCollect(enum node_type type, int ppos)
+int NodeCollect(enum node_type type, int ppos)
 {
     int nelems = pos - ppos;
     NodeElement *prev = &elements[ppos];
@@ -90,8 +95,10 @@ void NodeCollect(enum node_type type, int ppos)
     break;
     default:
         printf("Illegal collection code %d\n", type);
-        exit(1);
+        return -1;
     }
+
+    return 0;
 }
 
 void NodeKeyValueCollect()

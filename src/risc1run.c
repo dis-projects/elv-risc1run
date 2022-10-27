@@ -171,6 +171,7 @@ static int addConfSections(pRisc1Job pRJob)
 void risc1LoadFile(int id, const char **args)
 {
     pRisc1Job pRJob = risc1NewJob(id, args[1]);
+    int ret;
 
     if (pRJob == NULL) {
         perror("Can't create job");
@@ -187,7 +188,15 @@ void risc1LoadFile(int id, const char **args)
         exit(1);
     }
 
-    risc1ProcessArgs(pRJob, args);
+    ret = risc1ProcessArgs(pRJob, args);
+    switch(ret) {
+    case 1:
+        fprintf(stderr, "Exit\n");
+        break;
+    default:
+        fprintf(stderr, "Exception\n");
+        break;
+    }
 }
 
 int main(int argc, const char **argv)

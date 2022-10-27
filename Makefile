@@ -14,7 +14,7 @@ define Package/risc1run
 	TITLE:=Simple risc1 control utility
 endef
 
-define Package/memtester-simple/description
+define Package/risc1run/description
    risc1run is a simple utility to start RISC1 program
 endef
 

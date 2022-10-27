@@ -55,11 +55,11 @@ typedef struct NodePosition {
     int pos;
 } NodePosition, *pNodePosition;
 
-void NodeStackAllocate();
+int NodeStackAllocate();
 int NodePos();
 NodeElement *NodeNew();
 NodeElement *NodeAddr(int n);
-void NodeCollect(enum node_type type, int ppos);
+int NodeCollect(enum node_type type, int ppos);
 void NodeKeyValueCollect();
 void NodeOutputTree(int level, NodeElement *NE);
 
