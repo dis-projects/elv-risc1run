@@ -13,58 +13,51 @@
 #include <time.h>
 #include <elf.h>
 
-#define RISC1_LIB
+#define ELCORE_LIB
 
 #include "syscall.h"
-#include "linux/risc1.h"
-#include "risc1lib.h"
+#include "linux/elcore50.h"
+#include "elcorelib.h"
 #include "Node.h"
 
-#define RISC1_STACK_SIZE    (4 * 1024)
+#define ELCORE50_STACK_SIZE    (2 * 1024 * 1024)
 
 extern char **environ;
 
-int risc1_showinfo = 0;
-int risc1_syscall_out = 0;
-int risc1_debug_enable = 0;
-int risc1_rtrace = 0;
-int risc1_show_regs = 0;
-int risc1_map_out = 0;
-int risc1_status_always = 0;
-int risc1_status_debug = 0;
-int risc1_tstep = 1000;
-uint32_t risc1_pcstop = 0;
-uint32_t risc1_timeout = -1;
-uint32_t risc1_catch_mode = 0x00bb0003;
-pRisc1RegTrace pRisc1Trace = NULL;
-Node *risc1_conf = NULL;
+int elcore_showinfo = 0;
+int elcore_syscall_out = 0;
+int elcore_debug_enable = 0;
+int elcore_status_always = 0;
+int elcore_status_debug = 0;
+int elcore_tstep = 1000;
+uint32_t elcore_timeout = -1;
 
 static char gargs[0x1000];
 static char *garg = gargs;
 
-static int risc1ProcessSyscall(int job_instance_fd)
+static int elcoreProcessSyscall(int job_instance_fd)
 {
     struct stat ret_stat;
     struct stat_compat *stat_compat;
     struct tms ret_tms;
     struct tms_compat *tms_compat;
-    struct risc1_message message;
+    struct elcore50_message message;
     struct pollfd fds;
-    char *risc1_env, *env_buf;
-    uint32_t *risc1_env_size, full_needed_size;
+    char *elcore_env, *env_buf;
+    uint32_t *elcore_env_size, full_needed_size;
     void *tmp = NULL;
     int flags;
     int ret;
     char c;
 
-    ret = read(job_instance_fd, &message, sizeof(struct risc1_message));
+    ret = read(job_instance_fd, &message, sizeof(struct elcore50_message));
 
-    if (ret != sizeof(struct risc1_message)) {
+    if (ret != sizeof(struct elcore50_message)) {
         perror("Read job file failed");
         return -1;
     }
 
-    if (risc1_syscall_out) {
+    if (elcore_syscall_out) {
         fprintf(stderr, "Syscall message type %d\n", message.type);
         fprintf(stderr, "Syscall message num %d\n", message.num);
         fprintf(stderr, "Syscall message arg0 %lld\n", message.arg0);
@@ -163,9 +156,9 @@ static int risc1ProcessSyscall(int job_instance_fd)
         ret = unlink((char *)message.arg0);
         break;
     case SC_GET_ENV:
-        risc1_env = (char*)message.arg0;
-        risc1_env_size = (uint32_t *)message.arg1;
-        if (!risc1_env_size) { ret = -1; errno = EINVAL; break; }
+        elcore_env = (char*)message.arg0;
+        elcore_env_size = (uint32_t *)message.arg1;
+        if (!elcore_env_size) { ret = -1; errno = EINVAL; break; }
         full_needed_size = 0; env_buf = NULL;
         for (char **host_env = environ; *host_env; host_env++) {
             ret = full_needed_size;
@@ -186,22 +179,11 @@ static int risc1ProcessSyscall(int job_instance_fd)
         if (!tmp)  { ret = -1; errno = EINVAL; break; }
         env_buf = (char *) tmp;
         env_buf[full_needed_size - 1] = '\0';
-        if (risc1_env) {
-            memcpy(risc1_env, env_buf,
-                (*risc1_env_size > full_needed_size) ? full_needed_size : *risc1_env_size);
+        if (elcore_env) {
+            memcpy(elcore_env, env_buf,
+                (*elcore_env_size > full_needed_size) ? full_needed_size : *elcore_env_size);
         }
-        *risc1_env_size = full_needed_size;
-        ret = 0;
-        break;
-    case SC_EXIT:
-        return 1;
-    case EVENT_VCPU_PUTCHAR:
-        c = message.arg0;
-        putchar(c);
-        ret = 0;
-        break;
-    case EVENT_VCPU_PUTSTR:
-        puts((char*)message.arg0);
+        *elcore_env_size = full_needed_size;
         ret = 0;
         break;
     default:
@@ -209,8 +191,8 @@ static int risc1ProcessSyscall(int job_instance_fd)
         return -1;
     }
     message.retval = (ret < 0) ? -errno : ret;
-    message.type = RISC1_MESSAGE_SYSCALL_REPLY;
-    ret = write(job_instance_fd, &message, sizeof(struct risc1_message));
+    message.type = ELCORE50_MESSAGE_SYSCALL_REPLY;
+    ret = write(job_instance_fd, &message, sizeof(struct elcore50_message));
     if (ret < 0) {
         perror("syscall reply problem");
         return -1;
@@ -219,7 +201,7 @@ static int risc1ProcessSyscall(int job_instance_fd)
     return 0;
 }
 
-static void processArg(struct risc1_job_instance *job_instance, const char *arg)
+static void processArg(struct elcore50_job_instance *job_instance, const char *arg)
 {
     int j = job_instance->argc++;
     int l = strlen(arg);
@@ -243,7 +225,7 @@ static void processArg(struct risc1_job_instance *job_instance, const char *arg)
             garg += sizeof(d);
             job_instance->args[2].basic.size = sizeof(d);
         }
-        job_instance->args[j].type = RISC1_TYPE_BASIC_FLOAT;
+        job_instance->args[j].type = ELCORE50_TYPE_BASIC;
     } else {
         // Integer constant
         if (arg[l-1] == 'L' || arg[l-1] == 'l' ) {
@@ -261,16 +243,15 @@ static void processArg(struct risc1_job_instance *job_instance, const char *arg)
             garg += sizeof(l);
             job_instance->args[2].basic.size = sizeof(l);
         }
-        job_instance->args[j].type = RISC1_TYPE_BASIC;
+        job_instance->args[j].type = ELCORE50_TYPE_BASIC;
     }
 }
 
-int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
+int elcoreProcessArgs(pElcoreJob pRJob, const char **args)
 {
-    struct risc1_job_instance job_instance;
-    struct risc1_job_instance_status status;
-    struct risc1_dbg_mem mem;
-    struct risc1_dbg_stop_reason sreason;
+    struct elcore50_job_instance job_instance;
+    struct elcore50_job_instance_status status;
+    struct elcore50_dbg_stop_reason sreason;
     int id = pRJob->id;
     int jobfd = pRJob->job.job_fd;
     uint32_t pcbuf;
@@ -280,13 +261,9 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
 
     job_instance.argc = 0;
     job_instance.launcher_virtual_address = 0;
-    job_instance.debug_enable = risc1_debug_enable;
+    job_instance.debug_enable = elcore_debug_enable;
     job_instance.entry_point_virtual_address = 0x10000000;
 
-    if (risc1_showinfo)
-        printf("catch_mode 0x%x\n", risc1_catch_mode);
-
-    job_instance.catch_mode = risc1_catch_mode;
     job_instance.job_fd = jobfd;
     job_instance.debug_fd = -1;
 
@@ -297,7 +274,7 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
         processArg(&job_instance, args[i]);
     }
 
-    ret = ioctl(id, RISC1_IOC_ENQUEUE_JOB, &job_instance);
+    ret = ioctl(id, ELCORE50_IOC_ENQUEUE_JOB, &job_instance);
     if (ret != 0) {
         perror("enqueue job failed");
         return -1;
@@ -322,9 +299,9 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
         nfds = (job_instance.debug_fd < 0) ? 1 : 2;
 
         for (;;) {
-            ret = poll(fds, nfds, risc1_tstep);
+            ret = poll(fds, nfds, elcore_tstep);
             if (ret == 0) {
-                if (time(NULL) - t >= risc1_timeout) {
+                if (time(NULL) - t >= elcore_timeout) {
                     fprintf(stderr, "Timeout !!!\n");
                     return -1;
                 }
@@ -341,26 +318,26 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
             break;
         }
 
-        ret = ioctl(id, RISC1_IOC_GET_JOB_STATUS, &status);
+        ret = ioctl(id, ELCORE50_IOC_GET_JOB_STATUS, &status);
         if (ret != 0) {
             perror("status query failed\n");
             return -1;
         }
 
-        if (risc1_status_debug
-                && (risc1_status_always || state != status.state
+        if (elcore_status_debug
+                && (elcore_status_always || state != status.state
                      || error != status.error))
             fprintf(stderr, "error %d, state %d\n", status.error, status.state);
 
         // Select a source
         if (fds[0].revents & (POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM)) {
             switch(state) {
-            case RISC1_JOB_STATUS_DONE:
+            case ELCORE50_JOB_STATUS_DONE:
                 return 0;
-            case RISC1_JOB_STATUS_SYSCALL:
-                if (risc1_syscall_out)
-                    fprintf(stderr, "risc1run syscall\n");
-                ret = risc1ProcessSyscall(job_instance.job_instance_fd);
+            case ELCORE50_JOB_STATUS_SYSCALL:
+                if (elcore_syscall_out)
+                    fprintf(stderr, "elcorerun syscall\n");
+                ret = elcoreProcessSyscall(job_instance.job_instance_fd);
                 if (ret)
                     return ret;
                 break;
@@ -374,72 +351,33 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
         if (fds[1].revents & (POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM)) {
             static int prev_reason = -1;
             switch (state) {
-            case RISC1_JOB_STATUS_RUN:
+            case ELCORE50_JOB_STATUS_RUN:
                 usleep(1);
                 break;
-            case RISC1_JOB_STATUS_INTERRUPTED:
+            case ELCORE50_JOB_STATUS_INTERRUPTED:
 
-                if (ioctl(job_instance.debug_fd, RISC1_IOC_DBG_GET_STOP_REASON, &sreason) < 0) {
-                    perror("RISC1_IOC_DBG_GET_STOP_REASON");
+                if (ioctl(job_instance.debug_fd, ELCORE50_IOC_DBG_GET_STOP_REASON, &sreason) < 0) {
+                    perror("ELCORE50_IOC_DBG_GET_STOP_REASON");
                     return -1;
                 }
 
-                if (sreason.reason != prev_reason /*RISC1_STOP_REASON_DBG_INTERRUPT*/) {
+                if (sreason.reason != prev_reason /*ELCORE50_STOP_REASON_DBG_INTERRUPT*/) {
                     fprintf(stderr, "stop reason %d\n", sreason.reason);
                     prev_reason = sreason.reason;
                 }
 
-                if (sreason.reason == RISC1_STOP_REASON_APP_EXCEPTION)
+                if (sreason.reason == ELCORE50_STOP_REASON_APP_EXCEPTION)
                     return -1;
-
-                if (risc1_map_out) {
-                    ret = ioctl(job_instance.debug_fd, RISC1_IOC_DUMP, RISC1_DUMP_VMMU);
-                    if (ret) {
-                        perror("map dump");
-                        return -1;
-                    }
-                    risc1_map_out = 0;
-                }
-                if (risc1_show_regs) {
-                    /* Output registers */
-                    mem.size = 4;
-                    mem.data = &pcbuf;
-                    for (i = 0; i < risc1_rtrace; i++) {
-                        // mem.vaddr = 0x1ff; // PC
-                        mem.vaddr = pRisc1Trace[i].code;
-                        ret = ioctl(job_instance.debug_fd, RISC1_IOC_DBG_REGISTER_READ, &mem);
-                        if (ret) {
-                            perror("registers read");
-                            return -1;
-                        }
-                        fprintf(stderr, "%s 0x%08x\n", pRisc1Trace[i].name, pcbuf);
-                    }
-                }
-
-                if (risc1_pcstop != 0) {
-                    mem.size = 4;
-                    mem.data = &pcbuf;
-                    mem.vaddr = 0x1ff; // PC
-                    ret = ioctl(job_instance.debug_fd, RISC1_IOC_DBG_REGISTER_READ, &mem);
-                    if (ret) {
-                        perror("pc registers read");
-                        return -1;
-                    }
-                    if (pcbuf == risc1_pcstop) {
-                        ioctl(id, RISC1_IOC_DUMP, RISC1_IOC_DUMP, RISC1_DUMP_ONCD | RISC1_DUMP_REG);
-                        return 0;
-                    }
-                }
 
                 /* Execute one step */
                 steps = 1;
-                ret = ioctl(job_instance.debug_fd, RISC1_IOC_DBG_STEP, &steps);
+                ret = ioctl(job_instance.debug_fd, ELCORE50_IOC_DBG_STEP, &steps);
                 if (ret) {
                     perror("dbg step");
                     return -1;
                 }
                 break;
-            case RISC1_STOP_REASON_APP_EXCEPTION:
+            case ELCORE50_STOP_REASON_APP_EXCEPTION:
                 return -1;
             default:
                 fprintf(stderr, "unknown state for dbg %d\n", state);
@@ -449,13 +387,13 @@ int risc1ProcessArgs(pRisc1Job pRJob, const char **args)
     return 0;
 }
 
-static int createMapper(int id, struct risc1_buf *rbuf)
+static int createMapper(int id, struct elcore50_buf *rbuf)
 {
-    if (ioctl(id, RISC1_IOC_CREATE_BUFFER, rbuf)) {
+    if (ioctl(id, ELCORE50_IOC_CREATE_BUFFER, rbuf)) {
         perror("Can't create section buffer");
         return -1;
     }
-    if (ioctl(id, RISC1_IOC_CREATE_MAPPER, rbuf)) {
+    if (ioctl(id, ELCORE50_IOC_CREATE_MAPPER, rbuf)) {
         perror("Can't create section mapper");
         return -1;
     }
@@ -464,10 +402,10 @@ static int createMapper(int id, struct risc1_buf *rbuf)
     return 0;
 }
 
-int risc1AddSecton(pRisc1Job pRJob, void *amem, uint32_t addr, uint32_t size)
+int elcoreAddSecton(pElcoreJob pRJob, void *amem, uint32_t addr, uint32_t size)
 {
-    struct risc1_buf rbuf;
-    struct risc1_job_elf_section *esect
+    struct elcore50_buf rbuf;
+    struct elcore50_job_elf_section *esect
         = &pRJob->job.elf_sections[pRJob->job.num_elf_sections];
     void *mem = amem;
 
@@ -475,23 +413,23 @@ int risc1AddSecton(pRisc1Job pRJob, void *amem, uint32_t addr, uint32_t size)
         return -1;
     }
 
-    rbuf.type = RISC1_CACHED_BUFFER_FROM_UPTR;
+    rbuf.type = ELCORE50_CACHED_BUFFER_FROM_UPTR;
     rbuf.p = (__u64)mem;
     rbuf.size = size;
     if (createMapper(pRJob->id, &rbuf))
         return -1;
 
     esect->mapper_fd = rbuf.mapper_fd;
-    esect->type = RISC1_ELF_SECTION_DATA;
+    esect->type = ELCORE50_ELF_SECTION_DATA;
     esect->size = size;
-    esect->risc1_virtual_address = risc_get_paddr(addr);
+    esect->elcore_virtual_address = addr;
 
     pRJob->job.num_elf_sections++;
 
     return 0;
 }
 
-static pRisc1Job freeJob(pRisc1Job pRJob, int nsect)
+static pElcoreJob freeJob(pElcoreJob pRJob, int nsect)
 {
     int i;
 
@@ -503,20 +441,20 @@ static pRisc1Job freeJob(pRisc1Job pRJob, int nsect)
     return NULL;
 }
 
-int risc1PrepareJob(pRisc1Job pRJob)
+int elcorePrepareJob(pElcoreJob pRJob)
 {
-    struct risc1_buf rbuf;
+    struct elcore50_buf rbuf;
     void *mem;
 
     /* Create stack buffer */
-    if (posix_memalign(&mem, 0x1000, RISC1_STACK_SIZE)) {
+    if (posix_memalign(&mem, 0x1000, ELCORE50_STACK_SIZE)) {
         perror("Can't allocate memory for stack");
         freeJob(pRJob, pRJob->job.num_elf_sections);
         return -1;
     }
-    rbuf.type = RISC1_CACHED_BUFFER_FROM_UPTR;
+    rbuf.type = ELCORE50_CACHED_BUFFER_FROM_UPTR;
     rbuf.p = (__u64)mem;
-    rbuf.size = RISC1_STACK_SIZE;
+    rbuf.size = ELCORE50_STACK_SIZE;
     if (createMapper(pRJob->id, &rbuf)) {
         freeJob(pRJob, pRJob->job.num_elf_sections);
         free(mem);
@@ -525,7 +463,7 @@ int risc1PrepareJob(pRisc1Job pRJob)
 
     pRJob->job.stack_fd = rbuf.mapper_fd;
 
-    if (ioctl(pRJob->id, RISC1_IOC_CREATE_JOB, &pRJob->job)) {
+    if (ioctl(pRJob->id, ELCORE50_IOC_CREATE_JOB, &pRJob->job)) {
         perror("Can't create job");
         close(rbuf.mapper_fd);
         freeJob(pRJob, pRJob->job.num_elf_sections);
@@ -533,7 +471,7 @@ int risc1PrepareJob(pRisc1Job pRJob)
         return -1;
     }
 
-    if (risc1_showinfo)
+    if (elcore_showinfo)
         fprintf(stderr, "Job fd is %d\n", pRJob->job.job_fd);
 
     return 0;
@@ -544,7 +482,7 @@ static int readSegment(int fid, void *mem, int offset, int size)
     int pos, ret;
 
     pos = lseek(fid, 0, SEEK_CUR);
-    if (risc1_showinfo)
+    if (elcore_showinfo)
         fprintf(stderr, "pos = %d\n", pos);
 
     if (pos < 0) {
@@ -553,7 +491,7 @@ static int readSegment(int fid, void *mem, int offset, int size)
     }
 
     ret = lseek(fid, offset, SEEK_SET);
-    if (risc1_showinfo)
+    if (elcore_showinfo)
         fprintf(stderr, "offset = %d seek = %d\n", offset, ret);
 
     if (ret != offset) {
@@ -562,7 +500,7 @@ static int readSegment(int fid, void *mem, int offset, int size)
     }
 
     ret = read(fid, mem, size);
-    if (risc1_showinfo)
+    if (elcore_showinfo)
         fprintf(stderr, "size = %d ret = %d\n", size, ret);
 
     if (ret != size) {
@@ -571,7 +509,7 @@ static int readSegment(int fid, void *mem, int offset, int size)
     }
 
     ret = lseek(fid, pos, SEEK_SET);
-    if (risc1_showinfo)
+    if (elcore_showinfo)
         fprintf(stderr, "pos = %d ret = %d\n", pos, ret);
 
     if (ret != pos) {
@@ -582,15 +520,15 @@ static int readSegment(int fid, void *mem, int offset, int size)
     return 0;
 }
 
-pRisc1Job risc1NewJob(int id, const char *fname)
+pElcoreJob elcoreNewJob(int id, const char *fname)
 {
-    struct risc1_job *job;
-    struct risc1_buf rbuf;
+    struct elcore50_job *job;
+    struct elcore50_buf rbuf;
     Elf32_Ehdr ehdr;
     Elf32_Shdr shdr;
     Elf32_Phdr phdr;
     void *mem;
-    pRisc1Job pRJob;
+    pElcoreJob pRJob;
     int fid = -1;
     int size;
     int ret;
@@ -630,14 +568,14 @@ pRisc1Job risc1NewJob(int id, const char *fname)
         goto error;
     }
 
-    if (ehdr.e_phnum > RISC1_MAX_SEGMENTS) {
+    if (ehdr.e_phnum > ELCORE50_MAX_SEGMENTS) {
         fprintf(stderr, "Too many segments %d\n", ehdr.e_phnum);
         goto error;
     }
 
     /* Read all pheaders */
     for (int i = 0; i < ehdr.e_phnum; i++) {
-        enum risc1_job_elf_section_type type;
+        enum elcore50_job_elf_section_type type;
 
         if (read(fid, &phdr, sizeof(phdr)) != sizeof(phdr)) {
             perror("Can't read program header");
@@ -645,18 +583,18 @@ pRisc1Job risc1NewJob(int id, const char *fname)
         }
 
         /* Process header */
-        if (risc1_showinfo)
+        if (elcore_showinfo)
             fprintf(stderr, "Header %d has type %d\n", i, phdr.p_type);
 
         if (phdr.p_type != PT_LOAD)
             continue;
 
         if (phdr.p_flags & PF_X) {
-            type = RISC1_ELF_SECTION_CODE;
+            type = ELCORE50_ELF_SECTION_CODE;
         } else if (phdr.p_flags & PF_W) {
-            type = RISC1_ELF_SECTION_DATA;
+            type = ELCORE50_ELF_SECTION_DATA;
         } else {
-            type = RISC1_ELF_SECTION_DATA_CONST;
+            type = ELCORE50_ELF_SECTION_DATA_CONST;
         }
 
         if (posix_memalign(&mem, 0x1000, phdr.p_memsz)) {
@@ -675,7 +613,7 @@ pRisc1Job risc1NewJob(int id, const char *fname)
             memset((char*)mem + phdr.p_filesz, 0, phdr.p_memsz - phdr.p_filesz);
         }
 
-        rbuf.type = RISC1_CACHED_BUFFER_FROM_UPTR;
+        rbuf.type = ELCORE50_CACHED_BUFFER_FROM_UPTR;
         rbuf.p = (__u64)mem;
         rbuf.size = phdr.p_memsz;
         if (createMapper(id, &rbuf)) {
@@ -686,7 +624,7 @@ pRisc1Job risc1NewJob(int id, const char *fname)
         job->elf_sections[nsect].mapper_fd = rbuf.mapper_fd;
         job->elf_sections[nsect].type = type;
         job->elf_sections[nsect].size = phdr.p_memsz;
-        job->elf_sections[nsect].risc1_virtual_address = risc_get_paddr(phdr.p_vaddr);
+        job->elf_sections[nsect].elcore_virtual_address = phdr.p_vaddr;
         nsect++;
     }
 
@@ -700,13 +638,13 @@ error:
     return NULL;
 }
 
-int risc1Open(void)
+int elcoreOpen(void)
 {
-    int id = open("/dev/risc1", O_RDWR);
+    int id = open("/dev/elcore", O_RDWR);
     return id;
 }
 
-int risc1Close(int id)
+int elcoreClose(int id)
 {
     return close(id);
 }
