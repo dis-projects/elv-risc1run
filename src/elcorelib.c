@@ -558,7 +558,7 @@ pElcoreJob elcoreNewJob(int id, const char *fname)
         goto error;
     }
 
-    if (ehdr.e_machine != EM_MIPS && ehdr.e_machine != EM_MIPS_RS3_LE) {
+    if (ehdr.e_machine != 0x2718) {
         fprintf(stderr, "Illegal architecture in the file %s\n", fname);
         goto error;
     }
@@ -638,10 +638,12 @@ error:
     return NULL;
 }
 
-int elcoreOpen(void)
+int elcoreOpen(int id)
 {
-    int id = open("/dev/elcore", O_RDWR);
-    return id;
+    char devname[]="/dev/elcoreX";
+    devname[11] = '0' + id;
+    int fid = open(devname, O_RDWR);
+    return fid;
 }
 
 int elcoreClose(int id)

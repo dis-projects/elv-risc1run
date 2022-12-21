@@ -23,7 +23,9 @@
 #define RISC1_STACK_SIZE    (4 * 1024)
 
 extern char **environ;
+extern int risc1Bind(int id);
 
+int risc1_rmode = 0; // 0 - risc1, 1 - risc1-rproc
 int risc1_showinfo = 0;
 int risc1_syscall_out = 0;
 int risc1_debug_enable = 0;
@@ -703,6 +705,16 @@ error:
 int risc1Open(void)
 {
     int id = open("/dev/risc1", O_RDWR);
+    if (id >= 0)
+        return id;
+
+    id = open("/dev/rrisc1", O_RDWR);
+    if (id >= 0) {
+        risc1_rmode = 1;
+        fprintf(stderr, "Select risc1-rproc mode\n");
+        id = risc1Bind(id);
+    }
+
     return id;
 }
 

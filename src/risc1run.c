@@ -21,6 +21,7 @@ static Risc1RegTrace sregs[] = {
 
 static int trace = 0;
 
+extern int risc1_rmode;
 extern int risc1_showinfo;
 extern int risc1_tstep;
 extern int risc1_status_debug;
@@ -42,6 +43,9 @@ static void checkConfiguration(int id)
 {
     struct risc1_caps caps;
     int ret;
+
+    if (risc1_rmode)
+        return;
 
     ret = ioctl(id, RISC1_GET_CAPS, &caps);
 

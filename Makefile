@@ -24,6 +24,7 @@ TARGET_LDFLAGS += -lyaml
 define Package/risc1run/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/risc1run $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/double $(1)/usr/bin/risc1elcore
 endef
 
 $(eval $(call BuildPackage,risc1run))

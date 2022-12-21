@@ -15,5 +15,5 @@ pElcoreJob ElcoreNewJob(int id, const char *fname);
 int elcoreAddSecton(pElcoreJob pRJob, void *mem, uint32_t addr, uint32_t size);
 int elcorePrepareJob(pElcoreJob pRJob);
 int elcoreProcessArgs(pElcoreJob pRJob, const char **args);
-int elcoreOpen(void);
+int elcoreOpen(int id);
 int elcoreClose(int id);
