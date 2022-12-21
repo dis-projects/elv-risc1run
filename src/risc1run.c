@@ -265,6 +265,14 @@ int main(int argc, const char **argv)
         }
         break;
 
+        case 'E':
+        {
+            risc1LoadFirmware(id, 0, argv[2]);
+            risc1StartFirmware(id, 0, NULL);
+            argv += 2;
+        }
+        break;
+
         default:
             fprintf(stderr, "Unknown option %s\n", argv[1]);
         }

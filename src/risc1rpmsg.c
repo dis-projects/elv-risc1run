@@ -82,7 +82,7 @@ int risc1Bind(int rid)
 
 int risc1StartFirmwareList(int id)
 {
-    rmessage msg = {.group = 1};
+    rmessage msg = {.group = 1, .code = 0};
     return write(id, msg, 4) != 4;
 }
 
@@ -93,5 +93,20 @@ int risc1GetNextFirmware(int id, char **next)
     read(id, &msg, sizeof(msg));
     *next = &msg.bytes;
 
+    return 0;
+}
+
+int risc1LoadFirmware(int id, int en, const char *name)
+{
+    rmessage msg = {.group = 1, .code = 1 + en};
+    strcpy(msg.bytes, name);
+    write(id, msg, strlen(name) + 5);
+    return 0;
+}
+
+int risc1StartFirmware(int id, int en, void *params)
+{
+    rmessage msg = {.group = 1, .code = 3 + en};
+    write(id, msg, 4);
     return 0;
 }

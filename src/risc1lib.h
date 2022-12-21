@@ -37,4 +37,7 @@ int risc1Close(int id);
 
 int risc1StartFirmwareList(int id);
 int risc1GetNextFirmware(int id, char **next);
+int risc1LoadFirmware(int id, int en, const char *name);
+int risc1StartFirmware(int id, int en, void *params);
+
 
