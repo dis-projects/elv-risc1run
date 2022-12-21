@@ -250,6 +250,21 @@ int main(int argc, const char **argv)
         }
         break;
 
+        case 'l':
+        {
+            char *name;
+            risc1StartFirmwareList(id);
+            while (1) {
+                risc1GetNextFirmware(id, &name);
+                if (!name[0])
+                    break;
+
+                printf("Firmware : %s\n", name);
+            }
+            argv++;
+        }
+        break;
+
         default:
             fprintf(stderr, "Unknown option %s\n", argv[1]);
         }

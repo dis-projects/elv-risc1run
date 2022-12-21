@@ -2,12 +2,21 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include <sys/ioctl.h>
 #include <linux/rpmsg.h>
 
 #define RPMSG_BUS_SYS "/sys/bus/rpmsg"
 #define RPMSG_SERVICE_NAME "rpmsg-lite-demo-channel"
+
+#define RMESSAGE_SIZE (512 - 16 - 4)
+typedef struct rmessage {
+    uint16_t tsize;
+    uint8_t group;
+    uint8_t code;
+    uint8_t bytes[RMESSAGE_SIZE];
+}  rmessage, *prmessage;
 
 /* Bind driver and create endpoint */
 int risc1Bind(int rid)
@@ -69,4 +78,20 @@ int risc1Bind(int rid)
     id = open("/dev/rpmsg0", O_RDWR);
 
     return id;
+}
+
+int risc1StartFirmwareList(int id)
+{
+    rmessage msg = {.group = 1};
+    return write(id, msg, 4) != 4;
+}
+
+int risc1GetNextFirmware(int id, char **next)
+{
+    static rmessage msg;
+
+    read(id, &msg, sizeof(msg));
+    *next = &msg.bytes;
+
+    return 0;
 }

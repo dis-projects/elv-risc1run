@@ -34,3 +34,7 @@ int risc1PrepareJob(pRisc1Job pRJob);
 int risc1ProcessArgs(pRisc1Job pRJob, const char **args);
 int risc1Open(void);
 int risc1Close(int id);
+
+int risc1StartFirmwareList(int id);
+int risc1GetNextFirmware(int id, char **next);
+
