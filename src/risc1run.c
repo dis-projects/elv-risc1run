@@ -20,6 +20,7 @@ static Risc1RegTrace sregs[] = {
 };
 
 static int trace = 0;
+static int rid = -1;
 
 extern int risc1_rmode;
 extern int risc1_showinfo;
@@ -230,7 +231,19 @@ int main(int argc, const char **argv)
             int arg = RISC1_DUMP_MAIN;
             if (argv[2] != NULL)
                 sscanf(argv[2], "%i", &arg);
-            ioctl(id, RISC1_IOC_DUMP, arg);
+
+            if (risc1_rmode) {
+                rid = open("/dev/rrisc1", O_RDWR);
+                if (rid < 0) {
+                    perror("open rrisc1");
+                    goto finish;
+                }
+                if (ioctl(rid, RISC1_IOC_DUMP, arg) < 0) {
+                     perror("ioctl rrisc1");
+                }
+            } else {
+                ioctl(id, RISC1_IOC_DUMP, arg);
+            }
             goto finish;
         }
         break;
